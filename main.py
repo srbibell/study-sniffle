@@ -9,6 +9,7 @@ from app.recommendations import RecommendationEngine
 from app.visualizer import GraphVisualizer
 import json
 import os
+import logging
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -18,28 +19,79 @@ kg = KnowledgeGraph()
 recommender = RecommendationEngine(kg)
 visualizer = GraphVisualizer(kg)
 
-# Data file path
+# Data file paths - try multiple locations for different deployment environments
 DATA_FILE = 'data/knowledge_graph.json'
+TMP_DATA_FILE = '/tmp/knowledge_graph.json'
+
+# Track if we can write to filesystem
+CAN_SAVE_TO_FILE = True
 
 def load_data():
     """Load knowledge graph data from file"""
+    global DATA_FILE
+    
+    # Try to load from primary location
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            data = json.load(f)
-            kg.load_from_dict(data)
-    else:
-        # Initialize with some example data
-        kg.add_node('Python', 'concept', {'level': 'intermediate', 'started': '2024-01-01'})
-        kg.add_node('Flask', 'concept', {'level': 'beginner', 'started': '2024-02-01'})
-        kg.add_node('Graph Theory', 'concept', {'level': 'beginner', 'started': '2024-03-01'})
-        kg.add_edge('Python', 'Flask', 'prerequisite')
-        kg.add_edge('Python', 'Graph Theory', 'related_to')
+        try:
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+                kg.load_from_dict(data)
+                return
+        except Exception as e:
+            logging.warning(f"Failed to load from {DATA_FILE}: {e}")
+    
+    # Try to load from /tmp (for Vercel/serverless environments)
+    if os.path.exists(TMP_DATA_FILE):
+        try:
+            with open(TMP_DATA_FILE, 'r') as f:
+                data = json.load(f)
+                kg.load_from_dict(data)
+                DATA_FILE = TMP_DATA_FILE  # Use /tmp for future saves
+                return
+        except Exception as e:
+            logging.warning(f"Failed to load from {TMP_DATA_FILE}: {e}")
+    
+    # Initialize with some example data if no file exists
+    kg.add_node('Python', 'concept', {'level': 'intermediate', 'started': '2024-01-01'})
+    kg.add_node('Flask', 'concept', {'level': 'beginner', 'started': '2024-02-01'})
+    kg.add_node('Graph Theory', 'concept', {'level': 'beginner', 'started': '2024-03-01'})
+    kg.add_edge('Python', 'Flask', 'prerequisite')
+    kg.add_edge('Python', 'Graph Theory', 'related_to')
 
 def save_data():
-    """Save knowledge graph data to file"""
-    os.makedirs('data', exist_ok=True)
-    with open(DATA_FILE, 'w') as f:
-        json.dump(kg.to_dict(), f, indent=2)
+    """Save knowledge graph data to file - handles read-only filesystem gracefully"""
+    global CAN_SAVE_TO_FILE, DATA_FILE
+    
+    if not CAN_SAVE_TO_FILE:
+        return  # Skip saving if we know filesystem is read-only
+    
+    data_dict = kg.to_dict()
+    
+    # Try primary location first
+    try:
+        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+        with open(DATA_FILE, 'w') as f:
+            json.dump(data_dict, f, indent=2)
+        return
+    except (OSError, IOError, PermissionError) as e:
+        # If primary location fails, try /tmp (for Vercel/serverless)
+        if DATA_FILE != TMP_DATA_FILE:
+            try:
+                with open(TMP_DATA_FILE, 'w') as f:
+                    json.dump(data_dict, f, indent=2)
+                DATA_FILE = TMP_DATA_FILE  # Switch to /tmp for future saves
+                logging.info(f"Switched to {TMP_DATA_FILE} for data storage")
+                return
+            except (OSError, IOError, PermissionError) as e2:
+                # Both locations failed - filesystem is read-only
+                CAN_SAVE_TO_FILE = False
+                logging.warning(f"Cannot save to filesystem (read-only). Data will be in-memory only. Error: {e2}")
+                return
+        else:
+            # Already tried /tmp, give up
+            CAN_SAVE_TO_FILE = False
+            logging.warning(f"Cannot save to filesystem (read-only). Data will be in-memory only. Error: {e}")
+            return
 
 @app.route('/')
 def index():
