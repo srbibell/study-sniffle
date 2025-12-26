@@ -464,11 +464,13 @@
                     })
                 });
 
-                if (response.ok) {
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
                     document.getElementById('node-name').value = '';
                     loadGraph();
                 } else {
-                    alert('Error adding node');
+                    alert('Error: ' + (result.error || 'Failed to add node'));
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
@@ -497,10 +499,12 @@
                     })
                 });
 
-                if (response.ok) {
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
                     loadGraph();
                 } else {
-                    alert('Error adding edge');
+                    alert('Error: ' + (result.error || 'Failed to add edge'));
                 }
             } catch (error) {
                 alert('Error: ' + error.message);

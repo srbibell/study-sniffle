@@ -55,26 +55,57 @@ def get_graph():
 @app.route('/api/nodes', methods=['POST'])
 def add_node():
     """Add a new node to the graph"""
-    data = request.json
-    node_id = data.get('id')
-    node_type = data.get('type', 'concept')
-    properties = data.get('properties', {})
-    
-    kg.add_node(node_id, node_type, properties)
-    save_data()
-    return jsonify({'success': True, 'message': f'Node {node_id} added'})
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        node_id = data.get('id')
+        node_type = data.get('type', 'concept')
+        properties = data.get('properties', {})
+        
+        if not node_id:
+            return jsonify({'success': False, 'error': 'Node ID is required'}), 400
+        
+        # Check if node already exists
+        if node_id in kg.graph:
+            return jsonify({'success': False, 'error': f'Node {node_id} already exists'}), 400
+        
+        kg.add_node(node_id, node_type, properties)
+        save_data()
+        return jsonify({'success': True, 'message': f'Node {node_id} added'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Internal error: {str(e)}'}), 500
 
 @app.route('/api/edges', methods=['POST'])
 def add_edge():
     """Add a new edge to the graph"""
-    data = request.json
-    source = data.get('source')
-    target = data.get('target')
-    relationship = data.get('relationship', 'related_to')
-    
-    kg.add_edge(source, target, relationship)
-    save_data()
-    return jsonify({'success': True, 'message': f'Edge added between {source} and {target}'})
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        source = data.get('source')
+        target = data.get('target')
+        relationship = data.get('relationship', 'related_to')
+        
+        if not source or not target:
+            return jsonify({'success': False, 'error': 'Source and target are required'}), 400
+        
+        if source == target:
+            return jsonify({'success': False, 'error': 'Source and target cannot be the same'}), 400
+        
+        # Check if edge already exists
+        if kg.graph.has_edge(source, target):
+            return jsonify({'success': False, 'error': f'Edge between {source} and {target} already exists'}), 400
+        
+        kg.add_edge(source, target, relationship)
+        save_data()
+        return jsonify({'success': True, 'message': f'Edge added between {source} and {target}'})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Internal error: {str(e)}'}), 500
 
 @app.route('/api/recommendations', methods=['GET'])
 def get_recommendations():
