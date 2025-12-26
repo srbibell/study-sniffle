@@ -127,35 +127,40 @@ class KnowledgeGraph:
     
     def load_from_dict(self, data: Dict[str, Any]):
         """Load graph from dictionary"""
-        self.graph.clear()
-        self.nodes_data.clear()
-        self.edges_data.clear()
+        # Only clear if we have data to load, otherwise preserve existing graph
+        if data and (data.get('nodes') or data.get('edges')):
+            self.graph.clear()
+            self.nodes_data.clear()
+            self.edges_data.clear()
         
         # Load nodes first
-        for node_data in data.get('nodes', []):
-            node_id = node_data.get('id') or node_data.get('node_id')
-            if node_id:
-                self.add_node(
-                    node_id,
-                    node_data.get('type', node_data.get('node_type', 'concept')),
-                    node_data.get('properties', {})
-                )
+        if data and data.get('nodes'):
+            for node_data in data.get('nodes', []):
+                node_id = node_data.get('id') or node_data.get('node_id')
+                if node_id and node_id not in self.graph:  # Don't overwrite existing nodes
+                    self.add_node(
+                        node_id,
+                        node_data.get('type', node_data.get('node_type', 'concept')),
+                        node_data.get('properties', {})
+                    )
         
         # Load edges after all nodes are loaded
-        for edge_data in data.get('edges', []):
-            source = edge_data.get('source')
-            target = edge_data.get('target')
-            if source and target and source in self.graph and target in self.graph:
-                try:
-                    self.add_edge(
-                        source,
-                        target,
-                        edge_data.get('relationship', 'related_to'),
-                        edge_data.get('weight', 1.0)
-                    )
-                except ValueError:
-                    # Skip invalid edges
-                    continue
+        if data and data.get('edges'):
+            for edge_data in data.get('edges', []):
+                source = edge_data.get('source')
+                target = edge_data.get('target')
+                if source and target and source in self.graph and target in self.graph:
+                    if not self.graph.has_edge(source, target):  # Don't duplicate edges
+                        try:
+                            self.add_edge(
+                                source,
+                                target,
+                                edge_data.get('relationship', 'related_to'),
+                                edge_data.get('weight', 1.0)
+                            )
+                        except ValueError:
+                            # Skip invalid edges
+                            continue
         
         # Sync edges_data to ensure consistency
         self.sync_edges_data()

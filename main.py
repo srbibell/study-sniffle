@@ -98,6 +98,17 @@ def index():
     """Main dashboard page"""
     return render_template('index.html')
 
+@app.before_request
+def ensure_data_loaded():
+    """Ensure graph data is loaded before each request (for serverless compatibility)"""
+    # Only reload if graph is empty (might have been reset in serverless environment)
+    # But don't reload if we already have nodes (to preserve in-memory state)
+    if kg.get_node_count() == 0:
+        try:
+            load_data()
+        except Exception as e:
+            logging.warning(f"Failed to load data in before_request: {e}")
+
 @app.route('/api/graph', methods=['GET'])
 def get_graph():
     """Get the current knowledge graph structure"""
@@ -108,6 +119,10 @@ def get_graph():
 def add_node():
     """Add a new node to the graph"""
     try:
+        # Ensure data is loaded
+        if kg.get_node_count() == 0:
+            load_data()
+        
         data = request.json
         if not data:
             return jsonify({'success': False, 'error': 'No data provided'}), 400
@@ -125,14 +140,28 @@ def add_node():
         
         kg.add_node(node_id, node_type, properties)
         save_data()
-        return jsonify({'success': True, 'message': f'Node {node_id} added'})
+        
+        # Verify node was added
+        if node_id not in kg.graph:
+            return jsonify({'success': False, 'error': f'Failed to add node {node_id}'}), 500
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Node {node_id} added',
+            'total_nodes': kg.get_node_count()
+        })
     except Exception as e:
+        logging.error(f"Error adding node: {e}", exc_info=True)
         return jsonify({'success': False, 'error': f'Internal error: {str(e)}'}), 500
 
 @app.route('/api/edges', methods=['POST'])
 def add_edge():
     """Add a new edge to the graph"""
     try:
+        # Ensure data is loaded
+        if kg.get_node_count() == 0:
+            load_data()
+        
         data = request.json
         if not data:
             return jsonify({'success': False, 'error': 'No data provided'}), 400
@@ -175,6 +204,7 @@ def add_edge():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
+        logging.error(f"Error adding edge: {e}", exc_info=True)
         return jsonify({'success': False, 'error': f'Internal error: {str(e)}'}), 500
 
 @app.route('/api/recommendations', methods=['GET'])
@@ -201,7 +231,23 @@ def debug_nodes():
     return jsonify({
         'nodes': list(kg.graph.nodes()),
         'nodes_data': kg.nodes_data,
-        'graph_nodes': list(kg.graph.nodes(data=True))
+        'graph_nodes': list(kg.graph.nodes(data=True)),
+        'node_count': kg.get_node_count(),
+        'edge_count': kg.get_edge_count(),
+        'can_save': CAN_SAVE_TO_FILE,
+        'data_file': DATA_FILE
+    })
+
+@app.route('/api/verify', methods=['GET'])
+def verify_graph():
+    """Verify graph state - useful for debugging"""
+    return jsonify({
+        'node_count': kg.get_node_count(),
+        'edge_count': kg.get_edge_count(),
+        'all_nodes': list(kg.graph.nodes()),
+        'all_edges': [{'source': s, 'target': t} for s, t in kg.graph.edges()],
+        'nodes_data_keys': list(kg.nodes_data.keys()),
+        'edges_data_count': len(kg.edges_data)
     })
 
 if __name__ == '__main__':
