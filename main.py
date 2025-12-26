@@ -147,6 +147,24 @@ def add_edge():
         if source == target:
             return jsonify({'success': False, 'error': 'Source and target cannot be the same'}), 400
         
+        # Check if nodes exist BEFORE trying to add edge
+        missing_nodes = []
+        if source not in kg.graph:
+            missing_nodes.append(f'"{source}"')
+        if target not in kg.graph:
+            missing_nodes.append(f'"{target}"')
+        
+        if missing_nodes:
+            available_nodes = list(kg.graph.nodes())
+            error_msg = f"Node(s) {', '.join(missing_nodes)} do not exist. "
+            if available_nodes:
+                error_msg += f"Available nodes: {', '.join(available_nodes[:10])}"
+                if len(available_nodes) > 10:
+                    error_msg += f" (and {len(available_nodes) - 10} more)"
+            else:
+                error_msg += "No nodes exist yet. Please add nodes first."
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
         # Check if edge already exists
         if kg.graph.has_edge(source, target):
             return jsonify({'success': False, 'error': f'Edge between {source} and {target} already exists'}), 400
@@ -172,9 +190,19 @@ def get_stats():
         'total_nodes': kg.get_node_count(),
         'total_edges': kg.get_edge_count(),
         'node_types': kg.get_node_types(),
-        'most_connected': kg.get_most_connected_nodes(5)
+        'most_connected': kg.get_most_connected_nodes(5),
+        'all_nodes': list(kg.graph.nodes())  # Include list of all node IDs for debugging
     }
     return jsonify(stats)
+
+@app.route('/api/debug/nodes', methods=['GET'])
+def debug_nodes():
+    """Debug endpoint to list all nodes in the graph"""
+    return jsonify({
+        'nodes': list(kg.graph.nodes()),
+        'nodes_data': kg.nodes_data,
+        'graph_nodes': list(kg.graph.nodes(data=True))
+    })
 
 if __name__ == '__main__':
     load_data()

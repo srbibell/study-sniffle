@@ -304,20 +304,28 @@
             const sourceSelect = document.getElementById('edge-source');
             const targetSelect = document.getElementById('edge-target');
             
-            sourceSelect.innerHTML = '';
-            targetSelect.innerHTML = '';
+            // Clear and add default option
+            sourceSelect.innerHTML = '<option value="">-- Select Source --</option>';
+            targetSelect.innerHTML = '<option value="">-- Select Target --</option>';
             
-            graphData.nodes.forEach(node => {
-                const option1 = document.createElement('option');
-                option1.value = node.id;
-                option1.textContent = node.label;
-                sourceSelect.appendChild(option1);
-                
-                const option2 = document.createElement('option');
-                option2.value = node.id;
-                option2.textContent = node.label;
-                targetSelect.appendChild(option2);
-            });
+            // Add nodes to dropdowns
+            if (graphData.nodes && graphData.nodes.length > 0) {
+                graphData.nodes.forEach(node => {
+                    const option1 = document.createElement('option');
+                    option1.value = node.id;
+                    option1.textContent = node.label || node.id;
+                    sourceSelect.appendChild(option1);
+                    
+                    const option2 = document.createElement('option');
+                    option2.value = node.id;
+                    option2.textContent = node.label || node.id;
+                    targetSelect.appendChild(option2);
+                });
+            } else {
+                // Disable dropdowns if no nodes exist
+                sourceSelect.disabled = true;
+                targetSelect.disabled = true;
+            }
         }
 
         // Render graph using D3.js
@@ -513,8 +521,24 @@
             const target = document.getElementById('edge-target').value;
             const relationship = document.getElementById('edge-relationship').value;
 
+            // Validate selections
+            if (!source || !target) {
+                alert('Please select both source and target nodes');
+                return;
+            }
+
             if (source === target) {
                 alert('Source and target cannot be the same');
+                return;
+            }
+
+            // Verify nodes exist in current graph data
+            const sourceExists = graphData.nodes.some(n => n.id === source);
+            const targetExists = graphData.nodes.some(n => n.id === target);
+            
+            if (!sourceExists || !targetExists) {
+                alert('Selected nodes not found. Please refresh and try again.');
+                loadGraph(); // Refresh the graph
                 return;
             }
 
@@ -532,6 +556,9 @@
                 const result = await response.json();
                 
                 if (response.ok && result.success) {
+                    // Reset dropdowns
+                    document.getElementById('edge-source').value = '';
+                    document.getElementById('edge-target').value = '';
                     loadGraph();
                 } else {
                     alert('Error: ' + (result.error || 'Failed to add edge'));
