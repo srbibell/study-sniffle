@@ -322,8 +322,20 @@
 
         // Render graph using D3.js
         function renderGraph() {
+            // Clear previous graph
+            d3.select('#graph').html('');
+            
+            if (!graphData.nodes || graphData.nodes.length === 0) {
+                d3.select('#graph')
+                    .append('div')
+                    .style('text-align', 'center')
+                    .style('padding', '50px')
+                    .style('color', '#666')
+                    .html('<h3>No nodes yet</h3><p>Add your first node to start building your knowledge graph!</p>');
+                return;
+            }
+
             const svg = d3.select('#graph')
-                .html('')
                 .append('svg')
                 .attr('width', '100%')
                 .attr('height', '100%');
@@ -331,9 +343,27 @@
             const width = document.getElementById('graph').clientWidth;
             const height = document.getElementById('graph').clientHeight;
 
+            // Create a map of node IDs to node objects for quick lookup
+            const nodeMap = new Map(graphData.nodes.map(node => [node.id, node]));
+            
+            // Convert edge source/target from string IDs to node objects
+            const edgesWithNodes = graphData.edges.map(edge => {
+                const sourceNode = nodeMap.get(edge.source);
+                const targetNode = nodeMap.get(edge.target);
+                if (!sourceNode || !targetNode) {
+                    return null; // Skip invalid edges
+                }
+                return {
+                    source: sourceNode,
+                    target: targetNode,
+                    relationship: edge.relationship || 'related_to',
+                    weight: edge.weight || 1.0
+                };
+            }).filter(edge => edge !== null);
+
             // Create force simulation
             simulation = d3.forceSimulation(graphData.nodes)
-                .force('link', d3.forceLink(graphData.edges).id(d => d.id).distance(100))
+                .force('link', d3.forceLink(edgesWithNodes).id(d => d.id).distance(100))
                 .force('charge', d3.forceManyBody().strength(-300))
                 .force('center', d3.forceCenter(width / 2, height / 2))
                 .force('collision', d3.forceCollide().radius(30));
@@ -341,12 +371,12 @@
             // Create edges
             const edges = svg.append('g')
                 .selectAll('line')
-                .data(graphData.edges)
+                .data(edgesWithNodes)
                 .enter()
                 .append('line')
                 .attr('stroke', '#999')
                 .attr('stroke-opacity', 0.6)
-                .attr('stroke-width', 2);
+                .attr('stroke-width', d => Math.sqrt(d.weight || 1) * 2);
 
             // Create nodes
             const nodes = svg.append('g')
@@ -515,22 +545,26 @@
         async function loadRecommendations() {
             try {
                 const response = await fetch('/api/recommendations');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch recommendations');
+                }
                 const recommendations = await response.json();
                 const recDiv = document.getElementById('recommendations');
                 
-                if (recommendations.length === 0) {
-                    recDiv.innerHTML = '<p style="color: #999; text-align: center;">No recommendations yet</p>';
+                if (!recommendations || recommendations.length === 0) {
+                    recDiv.innerHTML = '<p style="color: #999; text-align: center; padding: 10px;">No recommendations yet. Add more nodes and connections!</p>';
                 } else {
                     recDiv.innerHTML = recommendations.map(rec => `
                         <div class="recommendation-item">
-                            <h4>${rec.node}</h4>
-                            <p>${rec.reason}</p>
+                            <h4>${rec.node || 'Unknown'}</h4>
+                            <p>${rec.reason || 'Recommended for learning'}</p>
                         </div>
                     `).join('');
                 }
             } catch (error) {
-                document.getElementById('recommendations').innerHTML = 
-                    '<p style="color: #999; text-align: center;">Error loading recommendations</p>';
+                const recDiv = document.getElementById('recommendations');
+                recDiv.innerHTML = '<p style="color: #999; text-align: center; padding: 10px;">Unable to load recommendations</p>';
+                console.error('Error loading recommendations:', error);
             }
         }
 

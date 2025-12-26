@@ -14,6 +14,10 @@ class RecommendationEngine:
     
     def get_recommendations(self, limit: int = 5) -> List[Dict[str, Any]]:
         """Get learning recommendations"""
+        # Handle empty graph
+        if self.kg.graph.number_of_nodes() == 0:
+            return []
+        
         recommendations = []
         
         # Strategy 1: Find nodes with prerequisites that are already learned

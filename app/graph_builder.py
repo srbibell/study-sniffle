@@ -32,20 +32,35 @@ class KnowledgeGraph:
         if source not in self.graph or target not in self.graph:
             raise ValueError(f"Both nodes must exist: {source} -> {target}")
         
-        self.graph.add_edge(source, target, relationship=relationship, weight=weight)
-        self.edges_data.append({
-            'source': source,
-            'target': target,
-            'relationship': relationship,
-            'weight': weight
-        })
+        # Check if edge already exists
+        if self.graph.has_edge(source, target):
+            # Update existing edge
+            self.graph.edges[source, target]['relationship'] = relationship
+            self.graph.edges[source, target]['weight'] = weight
+            # Update in edges_data
+            for edge in self.edges_data:
+                if edge['source'] == source and edge['target'] == target:
+                    edge['relationship'] = relationship
+                    edge['weight'] = weight
+                    return
+        else:
+            # Add new edge
+            self.graph.add_edge(source, target, relationship=relationship, weight=weight)
+            self.edges_data.append({
+                'source': source,
+                'target': target,
+                'relationship': relationship,
+                'weight': weight
+            })
     
     def remove_node(self, node_id: str):
         """Remove a node from the graph"""
         if node_id in self.graph:
+            # Get edges to remove before removing node
+            edges_to_remove = list(self.graph.edges(node_id))
             self.graph.remove_node(node_id)
             self.nodes_data.pop(node_id, None)
-            # Remove associated edges
+            # Remove associated edges from edges_data
             self.edges_data = [
                 e for e in self.edges_data 
                 if e['source'] != node_id and e['target'] != node_id
@@ -90,6 +105,19 @@ class KnowledgeGraph:
         """Get a subgraph containing specified nodes"""
         return self.graph.subgraph(node_ids)
     
+    def sync_edges_data(self):
+        """Synchronize edges_data with the actual graph edges"""
+        """Useful after loading or when edges might be out of sync"""
+        self.edges_data = []
+        for source, target in self.graph.edges():
+            edge_data = self.graph.edges[source, target]
+            self.edges_data.append({
+                'source': source,
+                'target': target,
+                'relationship': edge_data.get('relationship', 'related_to'),
+                'weight': edge_data.get('weight', 1.0)
+            })
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert graph to dictionary for serialization"""
         return {
@@ -103,20 +131,32 @@ class KnowledgeGraph:
         self.nodes_data.clear()
         self.edges_data.clear()
         
-        # Load nodes
+        # Load nodes first
         for node_data in data.get('nodes', []):
-            self.add_node(
-                node_data['id'],
-                node_data['type'],
-                node_data.get('properties', {})
-            )
+            node_id = node_data.get('id') or node_data.get('node_id')
+            if node_id:
+                self.add_node(
+                    node_id,
+                    node_data.get('type', node_data.get('node_type', 'concept')),
+                    node_data.get('properties', {})
+                )
         
-        # Load edges
+        # Load edges after all nodes are loaded
         for edge_data in data.get('edges', []):
-            self.add_edge(
-                edge_data['source'],
-                edge_data['target'],
-                edge_data.get('relationship', 'related_to'),
-                edge_data.get('weight', 1.0)
-            )
+            source = edge_data.get('source')
+            target = edge_data.get('target')
+            if source and target and source in self.graph and target in self.graph:
+                try:
+                    self.add_edge(
+                        source,
+                        target,
+                        edge_data.get('relationship', 'related_to'),
+                        edge_data.get('weight', 1.0)
+                    )
+                except ValueError:
+                    # Skip invalid edges
+                    continue
+        
+        # Sync edges_data to ensure consistency
+        self.sync_edges_data()
 
